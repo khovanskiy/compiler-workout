@@ -35,7 +35,7 @@ let rec eval cfg p =
     | ST name -> (match stack with
         | [] -> failwith "Empty stack"
         | value :: stack' ->
-          let s' = Syntax.Expr.update name value s in
+          let s' = Language.Expr.update name value s in
           let cfg'' = (s', input_list, output_list) in
           eval (stack', cfg'') remain
       )
@@ -57,8 +57,8 @@ let rec eval cfg p =
         match stack with
         | [] -> failwith "Empty stack"
         | b :: a :: stack' ->
-          let ast = Syntax.Expr.Binop op (Syntax.Expr.Const a) (Syntax.Expr.Const b) in
-          let value = Syntax.Expr.eval s ast in
+          let ast = Language.Expr.Binop op (Language.Expr.Const a) (Language.Expr.Const b) in
+          let value = Language.Expr.eval s ast in
           eval (value :: stack', cfg') remain
       )
     | _ -> failwith "Not implemented yet"
@@ -69,17 +69,17 @@ let rec eval cfg p =
 
    Takes an input stream, a program, and returns an output stream this program calculates
 *)
-let run i p = let (_, (_, _, o)) = eval ([], (Syntax.Expr.empty, i, [])) p in o
+let run i p = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in o
 
 (* Stack machine compiler
 
-     val compile_expr : Syntax.Expr.e -> prg
+     val compile_expr : Language.Expr.e -> prg
 
 *)
 let rec compile_expr e = match e with
-  | Syntax.Expr.Const x -> [CONST x]
-  | Syntax.Expr.Var name -> [LD name]
-  | Syntax.Expr.Binop (op, lhs, rhs) ->
+  | Language.Expr.Const x -> [CONST x]
+  | Language.Expr.Var name -> [LD name]
+  | Language.Expr.Binop (op, lhs, rhs) ->
     let le = (compile_expr lhs) in
     let re = (compile_expr rhs) in
     le @ re @ [BINOP op]
@@ -101,8 +101,8 @@ let run p i = let (_, (_, _, o)) = eval ([], (Expr.empty, i, [])) p in o
    stack machine
 *)
 let rec compile stmt = match stmt with
-  | Syntax.Stmt.Read name -> [READ] @ [ST name]
-  | Syntax.Stmt.Write e -> (compile_expr e) @ [WRITE]
-  | Syntax.Stmt.Assign (name, e) -> (compile_expr e) @ [ST name]
-  | Syntax.Stmt.Seq (lhs, rhs) -> (compile lhs) @ (compile rhs)
+  | Language.Stmt.Read name -> [READ] @ [ST name]
+  | Language.Stmt.Write e -> (compile_expr e) @ [WRITE]
+  | Language.Stmt.Assign (name, e) -> (compile_expr e) @ [ST name]
+  | Language.Stmt.Seq (lhs, rhs) -> (compile lhs) @ (compile rhs)
   | _ -> failwith "Not implemented yet"

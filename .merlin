@@ -1,7 +1,7 @@
 S regression/**
 S src/**
 
-PKG GT
+PKG GT Ostap Ostap.Combinators
 EXT GT
 
 FLG -rectypes

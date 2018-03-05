@@ -71,6 +71,8 @@ module Expr =
         | _ -> failwith "Not implemented binary operation yet"
       | _ -> failwith "Not implemented operation yet"
 
+    let mapper ops = List.map (fun op -> ostap ($(op)), fun x y -> Binop (op, x, y)) ops
+
     (* Expression parser. You can use the following terminals:
 
          IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
@@ -78,7 +80,25 @@ module Expr =
 
     *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+        parse: expr;
+
+        expr:
+          !(Ostap.Util.expr
+              (fun x -> x)
+              [|
+                `Lefta, mapper ["!!"];
+                `Lefta, mapper ["&&"];
+                `Nona,  mapper ["<="; ">="; "<"; ">"; "=="; "!="];
+                `Lefta, mapper ["+"; "-"];
+                `Lefta, mapper ["*"; "/"; "%"]
+              |]
+              primary
+           );
+
+        primary:
+          name:IDENT { Var name }
+          | d:DECIMAL { Const d }
+          | -"(" parse -")"
     )
 
   end
@@ -128,7 +148,17 @@ module Stmt =
 
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+      parse: seq | stmt;
+
+      seq: lhs:stmt -";" rhs:parse { Seq(lhs, rhs) };
+
+      stmt: assign | read | write;
+
+      assign: name:IDENT - ":=" expr:!(Expr.parse) { Assign (name, expr) };
+
+      read: "read" -"(" name:IDENT -")" { Read name };
+
+      write: "write" -"(" expr:!(Expr.parse) -")" { Write expr }
     )
   end
 

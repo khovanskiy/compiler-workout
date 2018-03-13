@@ -111,7 +111,18 @@ let rec compile env code =
       | "<="            -> compile_compare x y s "le"
       | "=="            -> compile_compare x y s "e"
       | "!="            -> compile_compare x y s "ne"
-      | _     -> failwith "unknown binary operator"
+      | "&&" | "!!"     -> 
+      [
+        Binop ("^", eax, eax); 
+        Binop ("^", edx, edx);
+        Binop ("cmp", L 0, y); 
+        Set ("nz", "%dl");
+        Binop ("cmp", L 0, x); 
+        Set ("nz", "%al");
+        Binop (op, edx, eax); 
+        Mov (eax, s)
+      ]
+      | _     -> failwith (Printf.sprintf "unknown binary operator \"%s\"" op)
       in env'', code
     | _ -> failwith "Instruction is not implemented yet"
   in

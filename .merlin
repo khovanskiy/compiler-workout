@@ -1,0 +1,6 @@
+S src/**
+
+PKG GT Ostap
+EXT GT
+
+FLG -rectypes

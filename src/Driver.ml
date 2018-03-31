@@ -1,4 +1,5 @@
 open Ostap
+open SM
 
 let parse infile =
   let s = Util.read infile in
@@ -6,7 +7,7 @@ let parse infile =
     (object
        inherit Matcher.t s
        inherit Util.Lexers.decimal s
-       inherit Util.Lexers.ident ["read"; "write"; "skip"; (* some other keywords *)] s
+       inherit Util.Lexers.ident ["read"; "write"; "skip"; "if"; "then"; "elif"; "else"; "fi"; "while"; "do"; "od"; "repeat"; "until"; "for"] s
        inherit Util.Lexers.skip [
 	 Matcher.Skip.whitespaces " \t\n";
 	 Matcher.Skip.lineComment "--";
@@ -15,6 +16,25 @@ let parse infile =
      end
     )
     (ostap (!(Language.parse) -EOF))
+
+let show instr = 
+  match instr with
+  | BINOP op -> "BINOP " ^ op
+  | CONST x -> "CONST " ^ (string_of_int x)
+  | READ -> "READ"
+  | WRITE -> "WRITE"
+  | LD x -> "LD" ^ x
+  | ST x -> "ST " ^ x
+  | LABEL l -> l ^ ":"
+  | JMP l -> "JMP " ^ l
+  | CJMP (c, l) -> "CJMP " ^ c ^ " " ^ l  
+
+let genasm prog =
+  let code = SM.compile prog in
+  let asm = Buffer.create 1024 in
+  Buffer.add_string asm "main:\n";
+  List.iter (fun i -> Buffer.add_string asm (Printf.sprintf "%s\n" @@ show i)) code;
+  Buffer.contents asm
 
 let main =
   try
@@ -41,7 +61,8 @@ let main =
 	  if interpret 
 	  then Language.eval prog input 
 	  else SM.run (SM.compile prog) input
-	in
+  in
+  (* Printf.printf "%s" (genasm prog); *)
 	List.iter (fun i -> Printf.printf "%d\n" i) output
     | `Fail er -> Printf.eprintf "Syntax error: %s\n" er
   with Invalid_argument _ ->

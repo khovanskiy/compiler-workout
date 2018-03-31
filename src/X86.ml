@@ -86,7 +86,63 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile env code = failwith "Not yet implemented"
+let rec compile env code =
+  let mov lhs rhs = match lhs, rhs with
+        | R _, _ | _, R _ -> [Mov (lhs, rhs)]
+        | _, _            -> [Mov (lhs, eax); Mov (eax, rhs)]
+  in
+  let compile_compare x y s op = [Mov (y, eax); Binop ("^", edx, edx); Binop ("cmp", x, eax); Set (op, "%dl"); Mov (edx, s)]
+  in
+  let rec compile_instr env instr = match instr with
+    | CONST n -> let o, env' = env#allocate in
+      env', [Mov (L n, o)];
+    | ST x -> let o, env' = (env#global x)#pop in
+      env', mov o (M (env#loc x))
+    | LD x -> let o, env' = (env#global x)#allocate in
+      env', mov (M (env#loc x)) o
+    | READ -> let o, env' = env#allocate in
+      env', [Call "Lread"; Mov (eax, o)]
+    | WRITE -> let o, env' = env#pop in
+      env', [Push o; Call "Lwrite"; Pop eax]
+    | BINOP op -> (
+      let x, y, env' = env#pop2 in
+      let s, env'' = env'#allocate in
+      let code = match op with
+      | "+" | "-" | "*" -> [Mov (y, eax); Binop (op, x, eax); Mov (eax, s)]
+      | "/"             -> [Mov (y, eax); Cltd; IDiv x; Mov (eax, s)]
+      | "%"             -> [Mov (y, eax); Cltd; IDiv x; Mov (edx, s)]
+      | ">"             -> compile_compare x y s "g"
+      | ">="            -> compile_compare x y s "ge"
+      | "<"             -> compile_compare x y s "l"
+      | "<="            -> compile_compare x y s "le"
+      | "=="            -> compile_compare x y s "e"
+      | "!="            -> compile_compare x y s "ne"
+      | "&&" | "!!"     -> 
+      [
+        Binop ("^", eax, eax); 
+        Binop ("^", edx, edx);
+        Binop ("cmp", L 0, y); 
+        Set ("nz", "%dl");
+        Binop ("cmp", L 0, x); 
+        Set ("nz", "%al");
+        Binop (op, edx, eax); 
+        Mov (eax, s)
+      ]
+      | _     -> failwith (Printf.sprintf "unknown binary operator \"%s\"" op)
+      in env'', code
+    )
+    | LABEL l -> env, [Label l]
+    | JMP l -> env, [Jmp l]
+    | CJMP (c, l) -> let o, env = env#pop in
+      env, [Binop ("cmp", L 0, o); CJmp (c, l)]
+    | _ -> failwith "Instruction is not implemented yet"
+  in
+  match code with
+  | [] -> env, []
+  | instr :: remain ->
+    let env', code' = compile_instr env instr in
+    let env'', code'' = compile env' remain in
+      env'', code' @ code''
 
 (* A set of strings *)           
 module S = Set.Make (String)

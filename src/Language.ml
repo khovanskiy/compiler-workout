@@ -73,8 +73,44 @@ module Expr =
 
        which takes an environment (of the same type), a name of the function, a list of actual parameters and a configuration, 
        an returns a pair: the return value for the call and the resulting configuration
-    *)                                                       
-    let rec eval env ((st, i, o, r) as conf) expr = failwith "Not implemented"
+    *)    
+    let to_func op =
+      let bti   = function true -> 1 | _ -> 0 in
+      let itb b = b <> 0 in
+      let (|>) f g   = fun x y -> f (g x y) in
+      match op with
+      | "+"  -> (+)
+      | "-"  -> (-)
+      | "*"  -> ( * )
+      | "/"  -> (/)
+      | "%"  -> (mod)
+      | "<"  -> bti |> (< )
+      | "<=" -> bti |> (<=)
+      | ">"  -> bti |> (> )
+      | ">=" -> bti |> (>=)
+      | "==" -> bti |> (= )
+      | "!=" -> bti |> (<>)
+      | "&&" -> fun x y -> bti (itb x && itb y)
+      | "!!" -> fun x y -> bti (itb x || itb y)
+      | _    -> failwith (Printf.sprintf "Unknown binary operator %s" op) 
+                                                       
+      let rec eval env ((st, i, o, r) as conf) expr =
+        match expr with
+        | Const n -> (st, i, o, Some n)
+        | Var x -> (st, i, o, Some (State.eval st x))
+        | Binop (op, x, y) ->
+          let (_, _, _, Some a) as a_conf = eval env conf x in
+          let (n_st, n_i, n_o, Some b) as b_conf = eval env a_conf y in
+          (n_st, n_i, n_o, Some (to_func op a b))
+        | Call (name, args) ->
+          let v_args, f_conf =
+            List.fold_left (
+              fun (acc, conf) e -> 
+                let (_, _, _, Some v) as conf' = eval env conf e in 
+                v::acc, conf'
+            ) ([], conf) args
+          in
+          env#definition env name (List.rev v_args) f_conf  
          
     (* Expression parser. You can use the following terminals:
 
@@ -82,7 +118,29 @@ module Expr =
          DECIMAL --- a decimal constant [0-9]+ as a string                                                                                                                  
     *)
     ostap (                                      
-      parse: empty {failwith "Not implemented"}
+      parse:
+	  !(Ostap.Util.expr 
+             (fun x -> x)
+	     (Array.map (fun (a, s) -> a, 
+                           List.map  (fun s -> ostap(- $(s)), (fun x y -> Binop (s, x, y))) s
+                        ) 
+              [|                
+                `Lefta, ["!!"];
+                `Lefta, ["&&"];
+                `Nona , ["=="; "!="; "<="; "<"; ">="; ">"];
+                `Lefta, ["+" ; "-"];
+                `Lefta, ["*" ; "/"; "%"];
+              |] 
+	     )
+	     primary);
+      
+      function_args: head:!(parse) tail:((-"," !(parse))* ) { head :: tail } | empty { [] };
+
+      primary:
+        name:IDENT "(" args:function_args ")" { Call (name, args) }
+      | n:DECIMAL { Const n }
+      | x:IDENT   { Var x }
+      | -"(" parse -")"
     )
     
   end
@@ -111,11 +169,55 @@ module Stmt =
        Takes an environment, a configuration and a statement, and returns another configuration. The 
        environment is the same as for expressions
     *)
-    let rec eval env ((st, i, o, r) as conf) k stmt = failwith "Not implemented"
+    let rec eval env ((st, i, o, r) as conf) k stmt = 
+      let seq x = function Skip -> x | y -> Seq(x, y) in
+      match stmt with
+      | Read    x       -> (match i with z::i' -> (eval env (State.update x z st, i', o, r) Skip k) | _ -> failwith "Unexpected end of input")
+      | Write   e       -> eval env (let (st, i, o, Some v) = Expr.eval env conf e in (st, i, o @ [v], r)) Skip k
+      | Assign (x, e)   -> eval env (let (st, i, o, Some v) = Expr.eval env conf e in (State.update x v st, i, o, r)) Skip k
+      | Seq    (s1, s2) -> eval env conf (seq s2 k) s1
+      | Skip            -> (match k with Skip -> conf | _ -> eval env conf Skip k)
+      | If (expr, body, else_block) -> let (_, _, _, Some v) = Expr.eval env conf expr in eval env conf k (if v <> 0 then body else else_block)
+      | While (expr, body) -> let (_, _, _, Some v) = Expr.eval env conf expr in
+                                if v <> 0
+                                then eval env conf (seq stmt k) body
+                                else eval env conf Skip k
+      | Repeat (body, expr) -> eval env conf (seq (While (Expr.Binop ("==", expr, Expr.Const 0), body)) k) body
+      | Return expr -> (match expr with None -> (st, i, o, None) | Some e -> Expr.eval env conf e)
+      | Call (name, expr_args) -> eval env (Expr.eval env conf (Expr.Call (name, expr_args))) Skip k
          
     (* Statement parser *)
+    let rec parse_if elif_block else_block =
+      match elif_block with 
+      | [] -> (
+        match else_block with
+        | None -> Skip
+        | Some else_stmt -> else_stmt
+      )
+      | (expr, elif_stmt)::remain_elif -> If (expr, elif_stmt, parse_if remain_elif else_block)  
+
     ostap (
-      parse: empty {failwith "Not implemented"}
+      parse:
+        s:stmt ";" ss:parse {Seq (s, ss)}
+      | stmt;
+
+      function_args: head:!(Expr.parse) tail:((-"," !(Expr.parse))* ) { head :: tail } | empty { [] };
+
+      stmt:
+        "read" "(" x:IDENT ")"          {Read x}
+      | "write" "(" e:!(Expr.parse) ")" {Write e}
+      | x:IDENT ":=" e:!(Expr.parse)    {Assign (x, e)}
+      | %"skip"                          {Skip}
+      | %"if" e:!(Expr.parse) %"then" body:!(parse)
+        elif_block:(%"elif" !(Expr.parse) %"then" parse)*
+        else_block:(%"else" parse)?
+        %"fi" {If (e, body, parse_if elif_block else_block)}
+      | %"while" e:!(Expr.parse) %"do" body:!(parse) %"od" {While (e, body)}
+      | %"repeat" body:!(parse) %"until" e:!(Expr.parse) {Repeat (body, e)}
+      | %"for" init_stmt:!(parse) "," e:!(Expr.parse) "," update_stmt:!(parse) 
+        %"do" loop_stmt:!(parse) %"od" {Seq (init_stmt, While (e, Seq (loop_stmt, update_stmt)))}
+      | %"return" expr:!(Expr.parse)? {Return expr}
+      | name:IDENT "(" args:function_args ")" { Call (name, args) }
     )
       
   end

@@ -94,23 +94,24 @@ module Expr =
       | "!!" -> fun x y -> bti (itb x || itb y)
       | _    -> failwith (Printf.sprintf "Unknown binary operator %s" op) 
                                                        
-      let rec eval env ((st, i, o, r) as conf) expr =
-        match expr with
-        | Const n -> (st, i, o, Some n)
-        | Var x -> (st, i, o, Some (State.eval st x))
-        | Binop (op, x, y) ->
-          let (_, _, _, Some a) as a_conf = eval env conf x in
-          let (n_st, n_i, n_o, Some b) as b_conf = eval env a_conf y in
-          (n_st, n_i, n_o, Some (to_func op a b))
-        | Call (name, args) ->
-          let v_args, f_conf =
-            List.fold_left (
-              fun (acc, conf) e -> 
-                let (_, _, _, Some v) as conf' = eval env conf e in 
-                v::acc, conf'
-            ) ([], conf) args
-          in
-          env#definition env name (List.rev v_args) f_conf  
+    let rec eval env ((st, i, o, r) as conf) expr =
+      match expr with
+      | Const n -> (st, i, o, Some n)
+      | Var x -> (st, i, o, Some (State.eval st x))
+      | Binop (op, x, y) ->
+        let (_, _, _, Some a) as a_conf = eval env conf x in
+        let (n_st, n_i, n_o, Some b) as b_conf = eval env a_conf y in
+        (n_st, n_i, n_o, Some (to_func op a b))
+      | Call (name, args) -> (
+        let v_args, conf' =
+          List.fold_left (
+            fun (acc, conf) e -> 
+              let (_, _, _, Some v) as conf' = eval env conf e in 
+              v::acc, conf'
+          ) ([], conf) args
+        in
+        env#definition env name (List.rev v_args) conf'  
+      )
          
     (* Expression parser. You can use the following terminals:
 
@@ -174,17 +175,41 @@ module Stmt =
       match stmt with
       | Read    x       -> (match i with z::i' -> (eval env (State.update x z st, i', o, r) Skip k) | _ -> failwith "Unexpected end of input")
       | Write   e       -> eval env (let (st, i, o, Some v) = Expr.eval env conf e in (st, i, o @ [v], r)) Skip k
-      | Assign (x, e)   -> eval env (let (st, i, o, Some v) = Expr.eval env conf e in (State.update x v st, i, o, r)) Skip k
+      | Assign (x, e)   -> (
+        let (st, i, o, Some v) = Expr.eval env conf e in 
+        let conf' = (State.update x v st, i, o, r) in
+        eval env conf' Skip k
+      )
       | Seq    (s1, s2) -> eval env conf (seq s2 k) s1
-      | Skip            -> (match k with Skip -> conf | _ -> eval env conf Skip k)
-      | If (expr, body, else_block) -> let (_, _, _, Some v) = Expr.eval env conf expr in eval env conf k (if v <> 0 then body else else_block)
-      | While (expr, body) -> let (_, _, _, Some v) = Expr.eval env conf expr in
-                                if v <> 0
-                                then eval env conf (seq stmt k) body
-                                else eval env conf Skip k
-      | Repeat (body, expr) -> eval env conf (seq (While (Expr.Binop ("==", expr, Expr.Const 0), body)) k) body
-      | Return expr -> (match expr with None -> (st, i, o, None) | Some e -> Expr.eval env conf e)
-      | Call (name, expr_args) -> eval env (Expr.eval env conf (Expr.Call (name, expr_args))) Skip k
+      | Skip            -> (
+        match k with 
+        | Skip -> conf 
+        | _ -> eval env conf Skip k
+      )
+      | If (expr, body, else_block) -> (
+        let (_, _, _, Some v) = Expr.eval env conf expr in
+        if v <> 0 
+        then eval env conf k body 
+        else eval env conf k else_block
+      )
+      | While (expr, body) -> (
+        let (_, _, _, Some v) = Expr.eval env conf expr in
+        if v <> 0
+        then eval env conf (seq stmt k) body
+        else eval env conf Skip k
+      )
+      | Repeat (body, expr) -> (
+        let while_block = (While (Expr.Binop ("==", expr, Expr.Const 0), body)) in
+        eval env conf (seq while_block k) body
+      )
+      | Return expr -> (
+        match expr with 
+        | None -> (st, i, o, None) 
+        | Some e -> Expr.eval env conf e
+      )
+      | Call (name, expr_args) -> (
+        eval env (Expr.eval env conf (Expr.Call (name, expr_args))) Skip k
+      )
          
     (* Statement parser *)
     let rec parse_if elif_block else_block =
@@ -194,7 +219,7 @@ module Stmt =
         | None -> Skip
         | Some else_stmt -> else_stmt
       )
-      | (expr, elif_stmt)::remain_elif -> If (expr, elif_stmt, parse_if remain_elif else_block)  
+      | (expr, elif_stmt)::remain -> If (expr, elif_stmt, parse_if remain else_block)  
 
     ostap (
       parse:

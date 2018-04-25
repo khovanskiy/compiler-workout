@@ -72,11 +72,6 @@ module Expr =
            method definition : env -> string -> int list -> config -> config
 
        which takes an environment (of the same type), a name of the function, a list of actual parameters and a configuration, 
-<<<<<<< HEAD
-       an returns resulting configuration
-    *)                                                       
-    let rec eval env ((st, i, o, r) as conf) expr = failwith "Not implemented"
-=======
        an returns a pair: the return value for the call and the resulting configuration
     *)    
     let to_func op =
@@ -117,7 +112,6 @@ module Expr =
         in
         env#definition env name (List.rev v_args) conf'  
       )
->>>>>>> origin/homework7
          
     (* Expression parser. You can use the following terminals:
 
@@ -125,9 +119,6 @@ module Expr =
          DECIMAL --- a decimal constant [0-9]+ as a string                                                                                                                  
     *)
     ostap (                                      
-<<<<<<< HEAD
-      parse: empty {failwith "Not implemented"}
-=======
       parse:
 	  !(Ostap.Util.expr 
              (fun x -> x)
@@ -151,7 +142,6 @@ module Expr =
       | n:DECIMAL { Const n }
       | x:IDENT   { Var x }
       | -"(" parse -")"
->>>>>>> origin/homework7
     )
     
   end
@@ -180,9 +170,6 @@ module Stmt =
        Takes an environment, a configuration and a statement, and returns another configuration. The 
        environment is the same as for expressions
     *)
-<<<<<<< HEAD
-    let rec eval env ((st, i, o, r) as conf) k stmt = failwith "Not implemnted"
-=======
     let rec eval env ((st, i, o, r) as conf) k stmt = 
       let seq x = function Skip -> x | y -> Seq(x, y) in
       match stmt with
@@ -223,7 +210,6 @@ module Stmt =
       | Call (name, expr_args) -> (
         eval env (Expr.eval env conf (Expr.Call (name, expr_args))) Skip k
       )
->>>>>>> origin/homework7
          
     (* Statement parser *)
     let rec parse_if elif_block else_block =
@@ -236,9 +222,6 @@ module Stmt =
       | (expr, elif_stmt)::remain -> If (expr, elif_stmt, parse_if remain else_block)  
 
     ostap (
-<<<<<<< HEAD
-      parse: empty {failwith "Not implemented"}
-=======
       parse:
         s:stmt ";" ss:parse {Seq (s, ss)}
       | stmt;
@@ -260,7 +243,6 @@ module Stmt =
         %"do" loop_stmt:!(parse) %"od" {Seq (init_stmt, While (e, Seq (loop_stmt, update_stmt)))}
       | %"return" expr:!(Expr.parse)? {Return expr}
       | name:IDENT "(" args:function_args ")" { Call (name, args) }
->>>>>>> origin/homework7
     )
       
   end

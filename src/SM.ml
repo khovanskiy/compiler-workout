@@ -31,10 +31,7 @@ type config = (prg * State.t) list * int list * Expr.config
 
    Takes an environment, a configuration and a program, and returns a configuration as a result. The
    environment is used to locate a label to jump to (via method env#labeled <label_name>)
-*)                                                  
-<<<<<<< HEAD
-let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) prg = failwith "Not implemented"
-=======
+*)
 let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
 | [] -> conf
 | insn :: prg' ->
@@ -71,7 +68,6 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
     eval env ((prg', st)::cstack, stack, c) (env#labeled name)
     )
   )
->>>>>>> origin/homework7
 
 (* Top-level evaluation
 
@@ -96,9 +92,6 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-<<<<<<< HEAD
-let compile (defs, p) = failwith "Not implemented"
-=======
 let rec compile (defs, p) = 
   let env = object
   val mutable label_ids = 0
@@ -153,4 +146,3 @@ let rec compile (defs, p) =
   )
   in
   ([LABEL "main"] @ compile_stmt p @ [END] @ List.concat (List.map compile_function defs))
->>>>>>> origin/homework7

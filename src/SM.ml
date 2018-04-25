@@ -31,7 +31,7 @@ type config = (prg * State.t) list * int list * Expr.config
 
    Takes an environment, a configuration and a program, and returns a configuration as a result. The
    environment is used to locate a label to jump to (via method env#labeled <label_name>)
-*)
+*)                                                  
 let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
 | [] -> conf
 | insn :: prg' ->
@@ -50,21 +50,17 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
     | "nz" -> z <> 0
     | "z" -> z == 0
     in eval env (cstack, stack', c) (if is_jump then (env#labeled l) else prg')
-  | BEGIN (args, locals) ->
-    let rec fun_init_state state = function
-      | arg::args, el::stk ->
-        let n_state, n_stack = fun_init_state state (args, stk) in
-        State.update arg el n_state, n_stack
-      | [], stk -> state, stk
-    in
-    let stt, stk = fun_init_state (State.enter st (args @ locals)) (args, stack) in
-    eval env (cstack, stk, (stt, i, o)) prg'
-  | END -> (
+  | BEGIN (_, a, l) -> (
+    let (st', stack') = List.fold_right (fun a (st, x::stack') -> (
+      State.update a x st, stack')) a (State.enter st (a @ l), stack) in
+    eval env (cstack, stack', (st', i, o)) prg'
+  )
+  | END | RET _ -> (
     match cstack with
     | (p, stt)::cstack' -> eval env (cstack', stack, (State.leave st stt, i, o)) p
     | [] -> conf
     )
-  | CALL name -> (
+  | CALL (name, _, _) -> (
     eval env ((prg', st)::cstack, stack, c) (env#labeled name)
     )
   )
@@ -104,7 +100,7 @@ let rec compile (defs, p) =
   | Expr.Var   x          -> [LD x]
   | Expr.Const n          -> [CONST n]
   | Expr.Binop (op, x, y) -> (compile_expr x) @ (compile_expr y) @ [BINOP op]
-  | Expr.Call (name, args) -> List.concat (List.map compile_expr args) @ [CALL name]
+  | Expr.Call (name, args) -> List.concat (List.map compile_expr args) @ [CALL ("L" ^ name, List.length args, false)]
   in
   let rec compile_stmt = function
   | Stmt.Seq (s1, s2)  -> (compile_stmt s1) @ (compile_stmt s2)
@@ -133,16 +129,17 @@ let rec compile (defs, p) =
   | Stmt.Call (name, args) -> (
     let list_compiled_args = List.map compile_expr (List.rev args) in
     let compiled_args = List.concat list_compiled_args in
-    compiled_args @ [CALL ("L" ^ name)]
+    compiled_args @ [CALL ("L" ^ name, List.length args, true)]
   )
   | Stmt.Return s -> (
     match s with 
-    | Some e  -> (compile_expr e) @ [END] 
-    | _       -> [END]
+    | Some e  -> (compile_expr e) @ [RET true] 
+    | _       -> [RET false]
   )
   in
   let rec compile_function (name, (args, locals, body)) = (
-    [LABEL ("L" ^ name); BEGIN (args, locals)] @ compile_stmt body @ [END]
+    let name' = "L" ^ name in
+    [LABEL (name'); BEGIN (name', args, locals)] @ compile_stmt body @ [END]
   )
   in
-  ([LABEL "main"] @ compile_stmt p @ [END] @ List.concat (List.map compile_function defs))
+  (compile_stmt p @ [END] @ List.concat (List.map compile_function defs))
